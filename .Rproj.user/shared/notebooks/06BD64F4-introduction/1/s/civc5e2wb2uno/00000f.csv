@@ -1,0 +1,7 @@
+"0","ps_result <- weight_poststratify("
+"0","  data = census_population,"
+"0","  linked = ""linked"","
+"0","  strata_vars = c(""sex"", ""race"")"
+"0",")"
+"0",""
+"0","ps_result"

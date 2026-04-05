@@ -1,0 +1,38 @@
+Package: linkinfer
+Title: Methods for Inference with Linked Data
+Version: 0.1.0
+Authors@R: c(
+    person("Casey F.", "Breen", email = "casey.breen@austin.utexas.edu",
+           role = c("aut", "cre")),
+    person("Won-tak", "Joo", email = "wjoo@ufl.edu",
+           role = "aut")
+  )
+Description: Tools for diagnosing and correcting bias arising from record
+    linkage errors. Provides methods for comparing linked samples to
+    reference populations, adjusting for missed matches using inverse
+    probability weighting, post-stratification, and raking, and validating
+    adjustments using validation variables. Companion package to Breen and
+    Joo (2026) "Population Research With Linked Data: Methods for
+    Inference".
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    rlang,
+    stats,
+    cli
+Suggests:
+    autumn,
+    ranger,
+    ggplot2,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Remotes:
+    aaronrudkin/autumn
+Config/testthat/edition: 3
+Depends: 
+    R (>= 3.5)
+LazyData: true

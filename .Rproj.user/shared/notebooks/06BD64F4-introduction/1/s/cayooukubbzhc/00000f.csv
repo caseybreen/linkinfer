@@ -1,0 +1,8 @@
+"0","ipw_result <- weight_ipw("
+"0","  data = census_population,"
+"0","  linked = ""linked"","
+"0","  covariates = c(""age"", ""sex"", ""race"", ""education"", ""urban"", ""name_commonness""),"
+"0","  method = ""logistic"""
+"0",")"
+"0",""
+"0","ipw_result"

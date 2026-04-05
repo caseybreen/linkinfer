@@ -1,0 +1,116 @@
+## ----include = FALSE----------------------------------------------------------
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+
+
+## ----setup--------------------------------------------------------------------
+library(linkinfer)
+
+
+## ----data---------------------------------------------------------------------
+data(census_population)
+data(linked_sample)
+
+cat("Population size:", nrow(census_population), "\n")
+cat("Linked sample size:", nrow(linked_sample), "\n")
+cat("Match rate:", round(mean(census_population$linked), 3), "\n")
+
+
+## ----compare------------------------------------------------------------------
+comparison <- compare_linked(
+  data = census_population,
+  linked = "linked",
+  vars = c("age", "sex", "race", "education", "urban", "name_commonness")
+)
+
+comparison
+
+
+## ----ipw----------------------------------------------------------------------
+ipw_result <- weight_ipw(
+  data = census_population,
+  linked = "linked",
+  covariates = c("age", "sex", "race", "education", "urban", "name_commonness"),
+  method = "logistic"
+)
+
+ipw_result
+
+
+## ----ipw-diag-----------------------------------------------------------------
+diag <- ipw_diagnostics(ipw_result)
+diag
+
+
+## ----love-plot, eval = requireNamespace("ggplot2", quietly = TRUE)------------
+plot(diag, type = "balance")
+
+
+## ----poststrat----------------------------------------------------------------
+ps_result <- weight_poststratify(
+  data = census_population,
+  linked = "linked",
+  strata_vars = c("sex", "race")
+)
+
+ps_result
+
+
+## ----raking, eval = requireNamespace("autumn", quietly = TRUE)----------------
+# Compute population marginals
+targets <- make_targets(
+  data = census_population,
+  vars = c("sex", "race", "education")
+)
+
+# Apply raking to the linked sample
+rake_result <- weight_rake(
+  linked_data = linked_sample,
+  targets = targets
+)
+
+rake_result
+
+
+## ----validate-----------------------------------------------------------------
+# Create binary outcome
+census_population$college <- as.integer(census_population$education == "College+")
+linked_sample$college <- as.integer(linked_sample$education == "College+")
+
+validation <- validate_estimate(
+  linked_data = linked_sample,
+  population_data = census_population,
+  outcome = "college",
+  adj_weights = ipw_result$weights
+)
+
+validation
+
+
+## ----false-match--------------------------------------------------------------
+# Estimate false match rate from middle initial disagreement
+mi_disagree <- linked_sample$middle_initial != linked_sample$middle_initial_mortality
+false_match_rate <- mean(mi_disagree)
+cat("Estimated false match rate:", round(false_match_rate, 3), "\n")
+
+
+## ----adjustment-factor--------------------------------------------------------
+# Suppose we're estimating the rate of a rare transition
+# Among records with disagreeing middle initials (likely false matches),
+# the transition rate reflects random pairing
+observed_rate <- 0.08
+rate_among_false <- 0.15   # estimated from validation subsample
+
+af <- compute_adjustment_factor(
+  observed_rate = observed_rate,
+  false_match_rate = false_match_rate,
+  rate_among_false = rate_among_false
+)
+
+cat("Adjustment factor:", round(af, 3), "\n")
+cat("Corrected rate:", round(observed_rate * af, 4), "\n")
+

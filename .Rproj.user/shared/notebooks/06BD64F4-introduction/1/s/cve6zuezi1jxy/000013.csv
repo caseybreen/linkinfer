@@ -1,0 +1,8 @@
+"0","comparison <- compare_linked("
+"0","  data = census_population,"
+"0","  linked = ""linked"","
+"0","  vars = c(""age"", ""sex"", ""race"", ""education"", ""urban"", ""name_commonness"")"
+"0",")"
+"2","Error in compare_linked(data = census_population, linked = ""linked"", vars = c(""age"",  : 
+  unused argument (data = census_population)
+"
