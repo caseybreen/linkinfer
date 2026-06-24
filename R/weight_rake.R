@@ -1,118 +1,70 @@
-#' Raking weights for linked samples
+#' Raking weights for linked samples (custom implementation)
 #'
 #' Adjusts the linked sample to match known population marginal distributions
-#' using iterative proportional fitting (raking) via the
-#' [autumn](https://github.com/aaronrudkin/autumn) package.
+#' using a simple iterative proportional fitting (raking) algorithm that does
+#' not depend on external packages.
 #'
 #' @param linked_data A data.frame of the linked subsample.
-#' @param targets A named list of target marginal distributions, where each
-#'   element is a named numeric vector (names = factor levels, values =
-#'   proportions). Use [make_targets()] to generate this from a population
-#'   data.frame.
+#' @param population A data.frame of the full population.
+#' @param vars A character vector of categorical variable names to be used for
+#'   raking. Marginal distributions for these variables are computed from
+#'   `population`.
 #' @param weights Optional. A character string naming a column of starting
-#'   weights in `linked_data`.
-#' @param max_weight Numeric. Maximum weight ratio (passed to autumn's `cap`
-#'   parameter). Default: 5.
-#' @param ... Additional arguments passed to [autumn::harvest()].
-#'
-#' @return A list of class `"linkinfer_rake"` with elements:
-#'   \describe{
-#'     \item{weights}{Numeric vector of raking weights.}
-#'     \item{harvest_result}{The full result from [autumn::harvest()].}
-#'   }
-#'
+#'   weights in `linked_data` (or a numeric vector of weights). If `NULL`
+#'   (default) all observations start with weight 1.
+#' @param max_iter Maximum number of raking iterations (default 10).
+#' @param tol Convergence tolerance for the maximum absolute change in the
+#'   marginal distributions (default 1e-6).
+#' @return A list of class `"linkinfer_rake"` with a single element:
+#'   \describe{\item{weights}{Numeric vector of raking weights.}}.
 #' @export
-weight_rake <- function(linked_data, targets, weights = NULL,
-                        max_weight = 5, ...) {
+weight_rake <- function(linked_data, population, vars,
+                        weights = NULL, max_iter = 10, tol = 1e-6) {
 
-  rlang::check_installed("autumn", reason = "for raking weights")
-
-  # Prepare arguments for autumn::harvest
-  harvest_args <- list(
-    data = linked_data,
-    target = targets,
-    max_weight = max_weight,
-    ...
-  )
-
-  # Add starting weights if provided
-  if (!is.null(weights)) {
-    if (is.character(weights) && length(weights) == 1) {
-      harvest_args$start_weights <- linked_data[[weights]]
-    } else if (is.numeric(weights)) {
-      harvest_args$start_weights <- weights
-    }
-  }
-
-  harvest_result <- tryCatch(
-    do.call(autumn::harvest, harvest_args),
-    error = function(e) {
-      if (grepl("Weighting unnecessary", e$message)) {
-        cli::cli_alert_info(
-          "Raking unnecessary: linked sample already matches targets."
-        )
-        return(NULL)
-      }
-      rlang::abort(e$message)
-    }
-  )
-
-  # Extract weights
-  if (is.null(harvest_result)) {
-    raked_weights <- rep(1, nrow(linked_data))
+  # Resolve starting weights
+  if (is.null(weights)) {
+    w <- rep(1, nrow(linked_data))
+  } else if (is.character(weights) && length(weights) == 1) {
+    w <- linked_data[[weights]]
+  } else if (is.numeric(weights)) {
+    w <- weights
   } else {
-    raked_weights <- harvest_result$weights
+    rlang::abort("`weights` must be NULL, a column name, or a numeric vector.")
   }
 
-  result <- list(
-    weights = raked_weights,
-    harvest_result = harvest_result
-  )
+  # Pre-compute population marginal proportions for each variable
+  pop_margins <- lapply(vars, function(v) {
+    prop.table(table(population[[v]], useNA = "no"))
+  })
+  names(pop_margins) <- vars
+
+  # Iterative proportional fitting
+  for (iter in seq_len(max_iter)) {
+    w_old <- w
+    for (v in vars) {
+      # Weighted distribution in linked sample for variable v
+      tabs <- tapply(w, linked_data[[v]], sum, na.rm = TRUE)
+      tabs <- tabs / sum(w)
+      # Align levels with population margins
+      pop_tab <- pop_margins[[v]]
+      # Ensure both have same names (levels)
+      all_levels <- union(names(pop_tab), names(tabs))
+      # Compute adjustment factors (default 1 for missing levels)
+      adj <- rep(1, length(all_levels))
+      names(adj) <- all_levels
+      adj[names(pop_tab)] <- pop_tab
+      adj_factor <- adj[names(tabs)] / tabs
+      # Apply factor to each row
+      factor_vec <- adj_factor[as.character(linked_data[[v]])]
+      w <- w * factor_vec
+    }
+    # Check convergence (max absolute change in weights)
+    if (max(abs(w - w_old)) < tol) break
+  }
+
+  result <- list(weights = w)
   class(result) <- "linkinfer_rake"
   result
-}
-
-#' Compute population marginal targets for raking
-#'
-#' Convenience function that computes marginal proportions from a population
-#' data.frame in the format expected by [autumn::harvest()].
-#'
-#' @param data A data.frame containing the full population.
-#' @param vars A character vector of categorical variable names.
-#' @param weights Optional. A character string naming a weight column, or a
-#'   numeric vector.
-#'
-#' @return A named list suitable for the `targets` argument of [weight_rake()].
-#'
-#' @export
-make_targets <- function(data, vars, weights = NULL) {
-
-  w <- NULL
-  if (!is.null(weights)) {
-    if (is.character(weights) && length(weights) == 1) {
-      w <- data[[weights]]
-    } else if (is.numeric(weights)) {
-      w <- weights
-    }
-  }
-
-  targets <- list()
-  for (v in vars) {
-    x <- data[[v]]
-    if (is.null(w)) {
-      tbl <- table(x, useNA = "no")
-      props <- prop.table(tbl)
-    } else {
-      lvls <- sort(unique(x[!is.na(x)]))
-      counts <- vapply(lvls, function(l) sum(w[x == l & !is.na(x)]), numeric(1))
-      props <- counts / sum(counts)
-      names(props) <- lvls
-    }
-    targets[[v]] <- as.numeric(props)
-    names(targets[[v]]) <- names(props)
-  }
-
-  targets
 }
 
 #' @export

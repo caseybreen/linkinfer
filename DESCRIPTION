@@ -1,6 +1,6 @@
 Package: linkinfer
 Title: Methods for Inference with Linked Data
-Version: 0.1.0
+Version: 1.0.0
 Authors@R: c(
     person("Casey F.", "Breen", email = "casey.breen@austin.utexas.edu",
            role = c("aut", "cre")),

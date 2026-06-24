@@ -6,8 +6,8 @@
 #' of Breen and Joo (2026): \eqn{w_i = 1 / p_i}.
 #'
 #' @param population A data.frame of the full population.
-#' @param linked A data.frame of the linked subsample. Must contain the same
-#'   covariates as `population`.
+#' @param linked_indicator Character string naming the binary variable in `population`
+#'   that indicates linkage status (1 = linked, 0 = not linked).
 #' @param covariates A character vector of covariate names used to model the
 #'   linkage probability. Must be present in both data.frames.
 #' @param method Character. Either `"logistic"` (default) for logistic regression
@@ -41,7 +41,7 @@
 #' )
 #'
 #' @export
-weight_ipw <- function(population, linked, covariates,
+weight_ipw <- function(population, linked_indicator, covariates,
                        method = c("logistic", "ml"),
                        trim = c(0.01, 0.99),
                        stabilize = TRUE,
@@ -53,15 +53,13 @@ weight_ipw <- function(population, linked, covariates,
     rlang::abort("`covariates` must be provided.")
   }
 
-  # Stack population and linked into one data.frame with indicator
+  # Create outcome indicator for linkage (1 = linked, 0 = not linked)
   linked_col <- ".linkinfer_linked."
-  pop_subset <- population[, covariates, drop = FALSE]
-  lnk_subset <- linked[, covariates, drop = FALSE]
-
-  pop_subset[[linked_col]] <- 0L
-  lnk_subset[[linked_col]] <- 1L
-
-  data <- rbind(pop_subset, lnk_subset)
+  if (!linked_indicator %in% names(population)) {
+    rlang::abort(paste0("`linked_indicator` column '", linked_indicator, "' not found in `population`."))
+  }
+  data <- population[, covariates, drop = FALSE]
+  data[[linked_col]] <- population[[linked_indicator]]
   linked_ind <- data[[linked_col]] == 1L
 
   # Build formula
@@ -125,7 +123,7 @@ weight_ipw <- function(population, linked, covariates,
     model = fit,
     method = method,
     n_population = nrow(population),
-    n_linked = nrow(linked),
+    n_linked = sum(population[[linked_indicator]]),
     covariates = covariates,
     stabilized = stabilize
   )

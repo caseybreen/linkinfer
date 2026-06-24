@@ -14,40 +14,35 @@ compare_linked(
 )
 }
 \arguments{
-\item{population}{A data.frame of the full population.}
-
-\item{linked}{A data.frame of the linked subsample.}
-
-\item{vars}{A character vector of variable names to compare. Must be present
-in both \code{population} and \code{linked}.}
-
-\item{weights}{Optional. A character string naming a column of sampling
-weights present in both data.frames.}
-
-\item{categorical}{Optional. A character vector explicitly naming categorical
-variables. If \code{NULL}, types are auto-detected.}
-
-\item{continuous}{Optional. A character vector explicitly naming continuous
-variables. If \code{NULL}, types are auto-detected.}
+\item{population}{A data.frame containing the full population.}
+\item{linked}{A data.frame containing the linked subsample.}
+\item{vars}{Character vector of variable names to compare; must exist in both data frames.}
+\item{weights}{Optional character string naming a column of sampling weights present in both data frames.}
+\item{categorical}{Optional character vector explicitly naming categorical variables. If NULL, types are auto‑detected.}
+\item{continuous}{Optional character vector explicitly naming continuous variables. If NULL, types are auto‑detected.}
 }
 \value{
-A data.frame of class \code{"linkinfer_comparison"} with columns:
-\code{variable}, \code{level} (NA for continuous), \code{pop_mean}, \code{linked_mean},
-\code{pop_n}, \code{linked_n}, \code{std_diff}, \code{type}.
+A data.frame of class "linkinfer_comparison" with columns:
+\describe{
+\item{variable}{Variable name.}
+\item{level}{Level of categorical variable (NA for continuous).}
+\item{pop_mean}{Population mean or proportion.}
+\item{linked_mean}{Linked sample mean or proportion.}
+\item{pop_n}{Number of non‑missing observations in population.}
+\item{linked_n}{Number of non‑missing observations in linked sample.}
+\item{std_diff}{Standardized difference between population and linked.}
+\item{type}{"continuous" or "categorical".}
+}
 }
 \description{
-Produces a comparison table showing means or proportions for each variable
-in the full population and the linked subsample, along with standardized
-differences. This is the first diagnostic step recommended by Breen and Joo
-(2026) for evaluating the representativeness of a linked sample.
+Creates a side‑by‑side comparison of selected variables between the full population and the linked sample, reporting means/proportions and standardized differences. Useful for assessing representativeness of the linked subsample.
 }
 \examples{
-data(census_population)
-data(linked_sample)
-compare_linked(
+# assume census_population and linked_sample are available
+diff <- compare_linked(
   population = census_population,
   linked = linked_sample,
   vars = c("age", "sex", "race", "education")
 )
-
+print(diff)
 }

@@ -1,31 +1,28 @@
-#' Diagnostics for inverse probability weights
+#' Diagnostics for weighting adjustments (post‑stratification and raking)
 #'
-#' Computes balance statistics and weight summaries to assess IPW quality.
+#' Provides balance statistics and weight summaries for weighting methods other than
+#' inverse‑probability weighting. The interface mirrors `ipw_diagnostics()` but
+#' works with any vector of adjustment weights.
 #'
-#' @param ipw_result An object of class `"linkinfer_ipw"` from [weight_ipw()].
-#' @param population A data.frame of the full population (same as passed to
-#'   [weight_ipw()]).
-#' @param linked A data.frame of the linked subsample (same as passed to
-#'   [weight_ipw()]).
+#' @param weights Numeric vector of adjustment weights for linked records.
+#' @param population A data.frame of the full population (same variables as
+#'   `linked`).
+#' @param linked A data.frame of the linked subsample.
+#' @param covariates Character vector of covariate names used to construct the
+#'   weights. Must be present in both data frames.
 #'
-#' @return A list of class `"linkinfer_ipw_diagnostics"` with elements:
-#'   \describe{
-#'     \item{balance}{A data.frame comparing unweighted and weighted standardized
-#'       differences for each covariate.}
-#'     \item{weight_summary}{A data.frame with weight distribution statistics.}
-#'   }
-#'
+#' @return An object of class `"linkinfer_weight_diagnostics"` containing a
+#'   balance table and a weight‑summary table.
 #' @export
-ipw_diagnostics <- function(ipw_result, population, linked) {
-  if (!inherits(ipw_result, "linkinfer_ipw")) {
-    rlang::abort("`ipw_result` must be an object from `weight_ipw()`.")
+weight_diagnostics <- function(weights, population, linked, covariates, extra_covariates = NULL) {
+  if (length(weights) != nrow(linked)) {
+    rlang::abort("Length of `weights` must equal number of linked records.")
   }
 
-  covariates <- ipw_result$covariates
-  w <- ipw_result$weights
-
   balance_rows <- list()
-  for (v in covariates) {
+  # Combine primary covariates (used for weighting) with any extra covariates
+  all_covs <- unique(c(covariates, extra_covariates))
+  for (v in all_covs) {
     x_pop <- population[[v]]
     x_lnk <- linked[[v]]
     vtype <- .detect_var_type(x_pop)
@@ -38,8 +35,8 @@ ipw_diagnostics <- function(ipw_result, population, linked) {
       lnk_var_uw <- .weighted_var(x_lnk)
       sd_uw <- .standardized_diff(pop_mean, lnk_mean_uw, pop_var, lnk_var_uw)
 
-      lnk_mean_w <- .weighted_mean(x_lnk, w)
-      lnk_var_w <- .weighted_var(x_lnk, w)
+      lnk_mean_w <- .weighted_mean(x_lnk, weights)
+      lnk_var_w <- .weighted_var(x_lnk, weights)
       sd_w <- .standardized_diff(pop_mean, lnk_mean_w, pop_var, lnk_var_w)
 
       balance_rows[[length(balance_rows) + 1]] <- data.frame(
@@ -55,7 +52,7 @@ ipw_diagnostics <- function(ipw_result, population, linked) {
     } else {
       pop_props <- .weighted_prop_table(x_pop)
       lnk_props_uw <- .weighted_prop_table(x_lnk)
-      lnk_props_w <- .weighted_prop_table(x_lnk, w)
+      lnk_props_w <- .weighted_prop_table(x_lnk, weights)
 
       all_levels <- union(names(pop_props), names(lnk_props_uw))
       for (lvl in all_levels) {
@@ -84,62 +81,51 @@ ipw_diagnostics <- function(ipw_result, population, linked) {
   balance <- do.call(rbind, balance_rows)
   rownames(balance) <- NULL
 
-  # Weight summary
   weight_summary <- data.frame(
-    min = min(w),
-    p5 = stats::quantile(w, 0.05),
-    p25 = stats::quantile(w, 0.25),
-    median = stats::median(w),
-    mean = mean(w),
-    p75 = stats::quantile(w, 0.75),
-    p95 = stats::quantile(w, 0.95),
-    max = max(w),
-    cv = stats::sd(w) / mean(w),
-    effective_n = .effective_n(w),
-    design_effect = .design_effect(w),
+    min = min(weights),
+    p5 = stats::quantile(weights, 0.05),
+    p25 = stats::quantile(weights, 0.25),
+    median = stats::median(weights),
+    mean = mean(weights),
+    p75 = stats::quantile(weights, 0.75),
+    p95 = stats::quantile(weights, 0.95),
+    max = max(weights),
+    cv = stats::sd(weights) / mean(weights),
+    effective_n = .effective_n(weights),
+    design_effect = .design_effect(weights),
     row.names = NULL
   )
 
-  result <- list(
-    balance = balance,
-    weight_summary = weight_summary
-  )
-  class(result) <- "linkinfer_ipw_diagnostics"
-  result
+  out <- list(balance = balance, weight_summary = weight_summary)
+  class(out) <- "linkinfer_weight_diagnostics"
+  out
 }
 
 #' @export
-print.linkinfer_ipw_diagnostics <- function(x, ...) {
-  cli::cli_h2("IPW Diagnostics")
-
+print.linkinfer_weight_diagnostics <- function(x, ...) {
+  cli::cli_h2("Weight Diagnostics")
   cli::cli_h3("Balance")
   print.data.frame(x$balance, digits = 3, row.names = FALSE)
-
   cli::cli_text("")
   cli::cli_h3("Weight Summary")
-  cli::cli_text("  Effective N: {.val {round(x$weight_summary$effective_n, 1)}}")
-  cli::cli_text("  Design effect: {.val {round(x$weight_summary$design_effect, 3)}}")
-  cli::cli_text("  CV of weights: {.val {round(x$weight_summary$cv, 3)}}")
-  cli::cli_text("  Range: [{.val {round(x$weight_summary$min, 3)}}, {.val {round(x$weight_summary$max, 3)}}]")
-
+  ws <- x$weight_summary[1, ]
+  cli::cli_text("  Effective N: {.val {round(ws$effective_n, 1)}}")
+  cli::cli_text("  Design effect: {.val {round(ws$design_effect, 3)}}")
+  cli::cli_text("  CV of weights: {.val {round(ws$cv, 3)}}")
+  cli::cli_text(
+    "  Range: [{.val {round(ws$min, 3)}}, {.val {round(ws$max, 3)}}]"
+  )
   invisible(x)
 }
 
-#' Plot IPW diagnostics
+#' Plot diagnostics for weight adjustments
 #'
-#' Produces a Love plot comparing standardized differences before and after
-#' IPW adjustment.
-#'
-#' @param x An object of class `"linkinfer_ipw_diagnostics"`.
-#' @param type Character. One of `"balance"` (default).
-#' @param ... Additional arguments (currently unused).
-#'
-#' @return A ggplot2 object (invisibly).
+#' @param x An object of class `"linkinfer_weight_diagnostics"`.
+#' @param type Currently only "balance" is supported.
 #' @export
-plot.linkinfer_ipw_diagnostics <- function(x, type = c("balance"), ...) {
+plot.linkinfer_weight_diagnostics <- function(x, type = c("balance"), ...) {
   rlang::check_installed("ggplot2", reason = "for diagnostic plots")
   type <- match.arg(type)
-
   if (type == "balance") {
     bal <- x$balance
     bal$label <- ifelse(
@@ -147,14 +133,12 @@ plot.linkinfer_ipw_diagnostics <- function(x, type = c("balance"), ...) {
       bal$variable,
       paste0(bal$variable, ": ", bal$level)
     )
-
     plot_data <- data.frame(
       label = rep(bal$label, 2),
       std_diff = c(bal$std_diff_unweighted, bal$std_diff_weighted),
       type = rep(c("Unweighted", "Weighted"), each = nrow(bal)),
       stringsAsFactors = FALSE
     )
-
     p <- ggplot2::ggplot(plot_data, ggplot2::aes(
       x = .data$std_diff,
       y = stats::reorder(.data$label, abs(.data$std_diff)),
@@ -168,11 +152,10 @@ plot.linkinfer_ipw_diagnostics <- function(x, type = c("balance"), ...) {
         y = NULL,
         color = NULL,
         shape = NULL,
-        title = "Covariate Balance: Unweighted vs. IPW-Weighted"
+        title = "Covariate Balance: Unweighted vs. Weighted"
       ) +
       ggplot2::theme_minimal()
-
     print(p)
-    return(invisible(p))
+    invisible(p)
   }
 }

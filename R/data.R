@@ -1,7 +1,7 @@
 #' Simulated census population
 #'
 #' A simulated dataset representing a full census population of 5,000
-#' individuals. Linkage to mortality records is incomplete, with linkage
+#' individuals. Linkage to external records is incomplete, with linkage
 #' probability depending on name commonness and race.
 #'
 #' @format A data.frame with 5,000 rows and 8 columns:
@@ -17,13 +17,13 @@
 #'   \item{linked}{Binary indicator: 1 if successfully linked to mortality
 #'     records, 0 otherwise.}
 #' }
-"census_population"
+
 
 #' Simulated linked sample
 #'
-#' The subset of [census_population] that was successfully linked to mortality
-#' records. Contains the mortality outcome (age at death) and a validation
-#' variable (middle initial) that can be used to detect false matches.
+#' The subset of the simulated population that was successfully linked to external
+#' records. Contains the race change outcome `race_diff`, the age-at-death outcome,
+#' and the validation variable `middle_initial_match`.
 #'
 #' @format A data.frame with rows for linked individuals and 11 columns:
 #' \describe{
@@ -37,9 +37,7 @@
 #'   \item{age_at_death}{Age at death from mortality records. For false
 #'     matches, this is the age at death of a different individual.}
 #'   \item{middle_initial}{Middle initial from census records.}
-#'   \item{middle_initial_mortality}{Middle initial from mortality records.
-#'     Disagreement suggests a false match.}
-#'   \item{is_false_match}{Logical. TRUE if this record is a false match
-#'     (unknown in real applications, included here for illustration).}
+#'   \item{middle_initial_match}{Binary indicator (1=match, 0=mismatch) for the middle initial
+#'     between census and linked records.}
 #' }
-"linked_sample"
+

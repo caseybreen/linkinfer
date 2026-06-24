@@ -22,9 +22,9 @@ knitr::opts_chunk$set(
 or census data. When records are linked across datasets, two types of errors
 can affect inference:
 
-1. **Missed matches** — records that should have linked but didn't, creating
-   non-random sample selection.
-2. **False matches** — records incorrectly linked to the wrong individual,
+1. **Missed matches** – records that should have linked but didn't, creating
+   non‑random sample selection.
+2. **False matches** – records incorrectly linked to the wrong individual,
    introducing measurement error.
 
 This package helps diagnose and correct for these errors following the
@@ -33,190 +33,146 @@ Methods for Inference."
 
 ## Setup
 
-```{r setup}
-library(linkinfer)
+```{r setup, include=FALSE}
+# Reload the development version of linkinfer, ensuring no older version is attached
+if ("linkinfer" %in% loadedNamespaces()) {
+  detach("package:linkinfer", unload=TRUE, character.only=TRUE)
+}
+devtools::load_all('..')
+```
+
+
+```{r seed, echo=TRUE}
+# Ensure reproducibility for the vignette
+set.seed(1234)
 ```
 
 ## Example data
 
-The package includes simulated data representing a census-to-mortality linkage.
-`census_population` is the full census (5,000 individuals), and
-`linked_sample` is the subset successfully linked to mortality records.
+The package includes simulated data representing a census‑to‑linked records.
+`population` is the full simulated census population, and `linked_sample`
+is the subset that was successfully linked.
 
 ```{r data}
-data(census_population)
-data(linked_sample)
+# Simulate data (the function adds stochastic noise to `linked_prob`)
+sim <- linked_data(n = 10000, p = 0.2, v1 = 0.5, v2 = 0.8)
+population <- sim$population
+linked_sample <- sim$linked
 
-cat("Population size:", nrow(census_population), "\n")
+cat("Population size:", nrow(population), "\n")
 cat("Linked sample size:", nrow(linked_sample), "\n")
-cat("Match rate:", round(nrow(linked_sample) / nrow(census_population), 3), "\n")
+cat("Match rate:", round(nrow(linked_sample) / nrow(population), 3), "\n")
 ```
 
 ## Step 1: Diagnose representativeness
 
-The first step is to compare the linked sample against the full population.
-Are certain groups over- or under-represented?
-
 ```{r compare}
 comparison <- compare_linked(
-  population = census_population,
+  population = population,
   linked = linked_sample,
   vars = c("age", "sex", "race", "education", "urban", "name_commonness")
 )
-
 comparison
 ```
 
-Variables with large standardized differences (|std_diff| > 0.1) indicate
-that the linked sample is not representative along that dimension. Here,
-`name_commonness` stands out — individuals with common names are harder
-to link uniquely, so they are underrepresented.
-
 ## Step 2: Adjust for missed matches
 
-### Option A: Inverse probability weighting
-
-We model the probability that each record was linked as a function of
-observed characteristics, then weight linked records by the inverse of
-that probability.
+### Inverse‑probability weighting
 
 ```{r ipw}
 ipw_result <- weight_ipw(
-  population = census_population,
-  linked = linked_sample,
+  population = population,
+  linked_indicator = "linked",
   covariates = c("age", "sex", "race", "education", "urban", "name_commonness"),
   method = "logistic"
 )
-
 ipw_result
 ```
 
-Check whether the weights improve balance:
+### Diagnostics (balance plot)
 
 ```{r ipw-diag}
-diag <- ipw_diagnostics(ipw_result, census_population, linked_sample)
+diag <- weight_diagnostics(
+  weights = ipw_result$weights,
+  population = population,
+  linked = linked_sample,
+  covariates = ipw_result$covariates
+)
 diag
 ```
 
-If `ggplot2` is installed, you can produce a Love plot:
-
-```{r love-plot, eval = requireNamespace("ggplot2", quietly = TRUE)}
-plot(diag, type = "balance")
-```
-
-### Option B: Post-stratification
-
-For a simpler approach, post-stratification reweights the linked sample so
-that the distribution across cells matches the population (Eq. 1 in the paper:
-$w_i = N_z / n_z$).
+### Post‑stratification
 
 ```{r poststrat}
 ps_result <- weight_poststratify(
-  population = census_population,
+  population = population,
   linked = linked_sample,
   strata_vars = c("sex", "race")
 )
-
 ps_result
+
+ps_diag <- weight_diagnostics(
+  weights = ps_result$weights,
+  population = population,
+  linked = linked_sample,
+  covariates = c("sex", "race")
+)
+ps_diag
 ```
 
-### Option C: Raking
+### Raking
 
-When many adjustment variables are used, direct cross-classification leads
-to sparse cells. Raking (iterative proportional fitting) adjusts to marginal
-distributions instead. This uses the `autumn` package as a backend.
-
-```{r raking, eval = requireNamespace("autumn", quietly = TRUE)}
-# Compute population marginals
-targets <- make_targets(
-  data = census_population,
-  vars = c("sex", "race", "education")
-)
-
-# Apply raking to the linked sample
+```{r raking}
 rake_result <- weight_rake(
   linked_data = linked_sample,
-  targets = targets
+  population = population,
+  vars = c("sex", "race", "education")
 )
-
 rake_result
 ```
 
-## Step 3: Validate adjustments
+## Step 3: Adjust for false matches using a validation variable
 
-A good validation variable is one that (a) is known at the population level
-and (b) was **not** used to construct the weights. Here we use `urban`
-residence as a validation variable, after fitting IPW weights that exclude
-`urban` from the covariates:
+The function `adjust_estimate()` defaults to using ordinary least squares (`lm()`) for model‑based adjustments, but you can supply any fitting function that accepts a `formula`, a `data` frame, and a `weights` argument (e.g., `glm()`, `coxph()`, `lmer()`). Just provide the fitting function via the `model_fit` argument and a custom `extract_estimate` function to pull the scalar of interest from the fitted model.
 
-```{r validate}
-# Fit IPW *without* urban in the model
-ipw_no_urban <- weight_ipw(
-  population = census_population,
-  linked = linked_sample,
-  covariates = c("age", "sex", "race", "education", "name_commonness")
-)
-
-# Validate: does the weighted linked sample recover the population
-# proportion urban?
-validation <- validate_estimate(
+```{r adjust-race-diff}
+adjust_res <- adjust_estimate(
+  weight_result = ipw_result,
   linked_data = linked_sample,
-  population_data = census_population,
-  outcome = "urban",
-  adj_weights = ipw_no_urban$weights
+  population_data = population,
+  outcome = "race_diff",
+  validation_var = "middle_initial_match",
+  n_boot = 200
 )
-
-validation
+adjust_res
 ```
 
-Because `urban` was held out from the propensity model, any improvement
-in the estimate provides genuine evidence that the weights are working.
+### Regression‑based adjustment (OLS coefficient for Black vs White)
 
-## Step 4: Correct for false matches
+```{r adjust-regression, warning=FALSE, message=FALSE}
+# Create a factor for race with White as reference
+linked_sample$race_f <- factor(linked_sample$race, levels = c("White", "Black", "Other"))
 
-False matches can inflate estimates of rare transitions and attenuate
-regression coefficients. When a validation variable is available (e.g.,
-middle initials not used in linkage), we can estimate the false match rate
-and apply a correction.
+model_form <- age_at_death ~ race_f
 
-```{r false-match}
-# Estimate false match rate from middle initial disagreement
-mi_disagree <- linked_sample$middle_initial != linked_sample$middle_initial_mortality
-false_match_rate <- mean(mi_disagree)
-cat("Estimated false match rate:", round(false_match_rate, 3), "\n")
-```
-
-For a binary outcome, the adjustment factor from Equation 7 of the paper
-corrects the observed rate:
-
-```{r adjustment-factor}
-# Suppose we're estimating the rate of a rare transition
-# Among records with disagreeing middle initials (likely false matches),
-# the transition rate reflects random pairing
-observed_rate <- 0.08
-rate_among_false <- 0.15   # estimated from validation subsample
-
-af <- compute_adjustment_factor(
-  observed_rate = observed_rate,
-  false_match_rate = false_match_rate,
-  rate_among_false = rate_among_false
+adjust_reg <- adjust_estimate(
+  weight_result = ipw_result,
+  linked_data = linked_sample,
+  population_data = population,
+  outcome = NULL,
+  validation_var = "middle_initial_match",
+  model_formula = model_form,
+  extract_estimate = function(fit) coef(fit)["race_fBlack"],
+  n_boot = 200
 )
-
-cat("Adjustment factor:", round(af, 3), "\n")
-cat("Corrected rate:", round(observed_rate * af, 4), "\n")
+adjust_reg
 ```
 
 ## Summary
 
-The recommended workflow for linked data analysis:
-
-1. **Compare** linked vs. population characteristics with `compare_linked()`
-2. **Adjust** for missed matches using `weight_ipw()`, `weight_poststratify()`,
-   or `weight_rake()`
-3. **Validate** adjustments using `validate_estimate()` with a variable
-   held out from the weighting model
-4. **Correct** for false matches using `compute_adjustment_factor()` when a
-   validation variable is available
+1. **Compare** linked vs. population characteristics with `compare_linked()`.
+2. **Adjust** for missed matches using `weight_ipw()`, `weight_poststratify()`, or `weight_rake()`.
+3. **Correct** for false matches using `adjust_estimate()` (validation‑variable based adjustment).
 
 ## References
 

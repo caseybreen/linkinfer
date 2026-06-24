@@ -6,7 +6,7 @@
 \usage{
 weight_ipw(
   population,
-  linked,
+  linked_indicator,
   covariates,
   method = c("logistic", "ml"),
   trim = c(0.01, 0.99),
@@ -17,8 +17,8 @@ weight_ipw(
 \arguments{
 \item{population}{A data.frame of the full population.}
 
-\item{linked}{A data.frame of the linked subsample. Must contain the same
-covariates as \code{population}.}
+\item{linked_indicator}{A character string naming the binary variable in \code{population}
+that indicates linkage status (1 = linked, 0 = not linked).}
 
 \item{covariates}{A character vector of covariate names used to model the
 linkage probability. Must be present in both data.frames.}
@@ -55,12 +55,10 @@ and returns inverse probability weights to adjust for selective linkage
 of Breen and Joo (2026): \eqn{w_i = 1 / p_i}.
 }
 \examples{
-data(census_population)
-data(linked_sample)
+# Assume census_population has a column "linked" indicating linkage status
 result <- weight_ipw(
   population = census_population,
-  linked = linked_sample,
+  linked_indicator = "linked",
   covariates = c("age", "sex", "race", "education", "urban")
 )
-
 }

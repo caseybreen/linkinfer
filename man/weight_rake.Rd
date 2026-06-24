@@ -4,33 +4,41 @@
 \alias{weight_rake}
 \title{Raking weights for linked samples}
 \usage{
-weight_rake(linked_data, targets, weights = NULL, max_weight = 5, ...)
+weight_rake(linked_data, population, vars,
+    weights = NULL, max_iter = 10, tol = 1e-6)
 }
 \arguments{
 \item{linked_data}{A data.frame of the linked subsample.}
 
-\item{targets}{A named list of target marginal distributions, where each
-element is a named numeric vector (names = factor levels, values =
-proportions). Use \code{\link[=make_targets]{make_targets()}} to generate this from a population
-data.frame.}
+\item{population}{A data.frame of the full population.}
+
+\item{vars}{A character vector of categorical variable names to be used for
+    raking. Marginal distributions for these variables are computed from
+    \code{population}.}
 
 \item{weights}{Optional. A character string naming a column of starting
-weights in \code{linked_data}.}
+    weights in \code{linked_data} (or a numeric vector of weights). If \code{NULL}
+    (default) all observations start with weight 1.}
 
-\item{max_weight}{Numeric. Maximum weight ratio (passed to autumn's \code{cap}
-parameter). Default: 5.}
+\item{max_iter}{Maximum number of raking iterations (default 10).}
 
-\item{...}{Additional arguments passed to \code{\link[autumn:harvest]{autumn::harvest()}}.}
+\item{tol}{Convergence tolerance for the maximum absolute change in the
+    marginal distributions (default 1e-6).}
 }
 \value{
-A list of class \code{"linkinfer_rake"} with elements:
-\describe{
-\item{weights}{Numeric vector of raking weights.}
-\item{harvest_result}{The full result from \code{\link[autumn:harvest]{autumn::harvest()}}.}
-}
+A list of class \code{"linkinfer_rake"} with a single element:
+\describe{\item{weights}{Numeric vector of raking weights.}}
 }
 \description{
 Adjusts the linked sample to match known population marginal distributions
-using iterative proportional fitting (raking) via the
-\href{https://github.com/aaronrudkin/autumn}{autumn} package.
+using a simple iterative proportional fitting (raking) algorithm that does
+not depend on external packages.
+}
+\examples{
+# Example: adjust gender distribution
+population <- data.frame(gender = c(rep("M", 500), rep("F", 500)))
+linked_data <- data.frame(gender = c(rep("M", 700), rep("F", 300)))
+
+result <- weight_rake(linked_data, population, vars = "gender")
+print(result)
 }
