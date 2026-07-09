@@ -31,6 +31,15 @@ This package helps diagnose and correct for these errors following the
 framework of Breen and Joo (2026), "Population Research With Linked Data:
 Methods for Inference."
 
+A useful way to think about the workflow is in three steps. Researchers first
+diagnose whether the linked sample is representative of the source population
+and, if not, apply weighting methods to address missed matches. They then
+evaluate whether false matches are likely to bias the estimate of interest
+and, when possible, use an auxiliary validation variable to estimate and correct
+that bias. Finally, they report both the original and corrected estimates
+so that the implications of linkage error are transparent.
+
+
 ## Setup
 
 ```{r setup, include=FALSE}
@@ -51,7 +60,16 @@ set.seed(1234)
 
 The package includes simulated data representing a census‑to‑linked records.
 `population` is the full simulated census population, and `linked_sample`
-is the subset that was successfully linked.
+is the subset that was successfully linked. In this example, the linked sample
+is affected by both missed and false matches.
+
+The simulation also includes a validation variable, middle_initial_match,
+which is observed only for a subset of linked records. This reflects a common
+empirical setting. Researchers often do not observe ground truth for whether
+each linked pair is correct, but they may observe an auxiliary variable that
+provides information about match quality for part of the sample. Here, matching
+middle initials serve as a proxy for higher-confidence links and are used to
+estimate how false matches may be biasing the full-sample estimates.
 
 ```{r data}
 # Simulate data (the function adds stochastic noise to `linked_prob`)
@@ -66,6 +84,11 @@ cat("Match rate:", round(nrow(linked_sample) / nrow(population), 3), "\n")
 
 ## Step 1: Diagnose representativeness
 
+The first step is to ask whether the linked sample resembles the population from
+which it was drawn. If linkage success varies by age, sex, race, education, or other
+characteristics, then inference based on the linked sample may be biased even before
+considering false matches.
+
 ```{r compare}
 comparison <- compare_linked(
   population = population,
@@ -76,6 +99,10 @@ comparison
 ```
 
 ## Step 2: Adjust for missed matches
+
+One way to correct for missed matches is to estimate each record’s probability of
+appearing in the linked sample and then weight linked observations by the inverse of
+that probability. This gives more influence to records from groups that were harder to link.
 
 ### Inverse‑probability weighting
 
@@ -91,6 +118,9 @@ ipw_result
 
 ### Diagnostics (balance plot)
 
+After estimating weights, it is useful to check whether the weighted linked sample is
+more similar to the population.
+
 ```{r ipw-diag}
 diag <- weight_diagnostics(
   weights = ipw_result$weights,
@@ -102,6 +132,9 @@ diag
 ```
 
 ### Post‑stratification
+
+If population totals are known for discrete subgroups, post-stratification offers
+a simpler correction.
 
 ```{r poststrat}
 ps_result <- weight_poststratify(
@@ -122,6 +155,9 @@ ps_diag
 
 ### Raking
 
+When exact joint cells become sparse, raking provides a more flexible way to align
+the linked sample to known marginal distributions.
+
 ```{r raking}
 rake_result <- weight_rake(
   linked_data = linked_sample,
@@ -133,7 +169,11 @@ rake_result
 
 ## Step 3: Adjust for false matches using a validation variable
 
-The function `adjust_estimate()` defaults to using ordinary least squares (`lm()`) for model‑based adjustments, but you can supply any fitting function that accepts a `formula`, a `data` frame, and a `weights` argument (e.g., `glm()`, `coxph()`, `lmer()`). Just provide the fitting function via the `model_fit` argument and a custom `extract_estimate` function to pull the scalar of interest from the fitted model.
+The function `adjust_estimate()` defaults to using ordinary least squares (`lm()`)
+for model‑based adjustments, but you can supply any fitting function that accepts
+a `formula`, a `data` frame, and a `weights` argument (e.g., `glm()`, `coxph()`,
+`lmer()`). Just provide the fitting function via the `model_fit` argument and a custom
+`extract_estimate` function to pull the scalar of interest from the fitted model.
 
 ```{r adjust-race-diff}
 adjust_res <- adjust_estimate(
