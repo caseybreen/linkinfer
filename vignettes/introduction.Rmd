@@ -35,10 +35,9 @@ A useful way to think about the workflow is in three steps. Researchers first
 diagnose whether the linked sample is representative of the source population
 and, if not, apply weighting methods to address missed matches. They then
 evaluate whether false matches are likely to bias the estimate of interest
-and, when possible, use an auxiliary validation variable to estimate and correct
-that bias. Finally, they report both the original and corrected estimates
-so that the implications of linkage error are transparent.
-
+and, when possible, use an auxiliary validation variable to estimate and
+correct that bias. Finally, they report both the original and corrected
+estimates so that the implications of linkage error are transparent.
 
 ## Setup
 
@@ -63,13 +62,14 @@ The package includes simulated data representing a census‑to‑linked records.
 is the subset that was successfully linked. In this example, the linked sample
 is affected by both missed and false matches.
 
-The simulation also includes a validation variable, middle_initial_match,
-which is observed only for a subset of linked records. This reflects a common
-empirical setting. Researchers often do not observe ground truth for whether
-each linked pair is correct, but they may observe an auxiliary variable that
-provides information about match quality for part of the sample. Here, matching
-middle initials serve as a proxy for higher-confidence links and are used to
-estimate how false matches may be biasing the full-sample estimates.
+The simulation also includes a validation variable,
+`middle_initial_match`, which is observed only for a subset of linked records.
+This reflects a common empirical setting. Researchers often do not observe
+ground truth for whether each linked pair is correct, but they may observe
+an auxiliary variable that provides information about match quality for part
+of the sample. Here, matching middle initials serve as a proxy for
+higher-confidence links and are used to estimate how false matches may be
+biasing the full-sample estimates.
 
 ```{r data}
 # Simulate data (the function adds stochastic noise to `linked_prob`)
@@ -84,10 +84,10 @@ cat("Match rate:", round(nrow(linked_sample) / nrow(population), 3), "\n")
 
 ## Step 1: Diagnose representativeness
 
-The first step is to ask whether the linked sample resembles the population from
-which it was drawn. If linkage success varies by age, sex, race, education, or other
-characteristics, then inference based on the linked sample may be biased even before
-considering false matches.
+The first step is to ask whether the linked sample resembles the population
+from which it was drawn. If linkage success varies by age, sex, race,
+education, or other characteristics, then inference based on the linked
+sample may be biased even before considering false matches.
 
 ```{r compare}
 comparison <- compare_linked(
@@ -101,8 +101,9 @@ comparison
 ## Step 2: Adjust for missed matches
 
 One way to correct for missed matches is to estimate each record’s probability of
-appearing in the linked sample and then weight linked observations by the inverse of
-that probability. This gives more influence to records from groups that were harder to link.
+appearing in the linked sample and then weight linked observations by the
+inverse of that probability. This gives more influence to records from groups
+that were harder to link.
 
 ### Inverse‑probability weighting
 
@@ -118,8 +119,8 @@ ipw_result
 
 ### Diagnostics (balance plot)
 
-After estimating weights, it is useful to check whether the weighted linked sample is
-more similar to the population.
+After estimating weights, it is useful to check whether the weighted linked
+sample is more similar to the population.
 
 ```{r ipw-diag}
 diag <- weight_diagnostics(
@@ -133,8 +134,8 @@ diag
 
 ### Post‑stratification
 
-If population totals are known for discrete subgroups, post-stratification offers
-a simpler correction.
+If population totals are known for discrete subgroups, post-stratification
+offers a simpler correction.
 
 ```{r poststrat}
 ps_result <- weight_poststratify(
@@ -155,8 +156,8 @@ ps_diag
 
 ### Raking
 
-When exact joint cells become sparse, raking provides a more flexible way to align
-the linked sample to known marginal distributions.
+When exact joint cells become sparse, raking provides a more flexible way to
+align the linked sample to known marginal distributions.
 
 ```{r raking}
 rake_result <- weight_rake(
@@ -169,11 +170,66 @@ rake_result
 
 ## Step 3: Adjust for false matches using a validation variable
 
-The function `adjust_estimate()` defaults to using ordinary least squares (`lm()`)
-for model‑based adjustments, but you can supply any fitting function that accepts
-a `formula`, a `data` frame, and a `weights` argument (e.g., `glm()`, `coxph()`,
-`lmer()`). Just provide the fitting function via the `model_fit` argument and a custom
-`extract_estimate` function to pull the scalar of interest from the fitted model.
+False matches can bias estimates because some linked records are assigned to
+the wrong individual. The adjustment-factor approach uses a validation
+variable, not used in linkage itself, to estimate the extent of this bias in
+a validation subsample and then applies that correction to the full linked
+sample.
+
+Let the observed rate in the linked sample be
+
+\[
+R' = R_{\text{true}}(1 - f_r) + R_{\text{false}} f_r,
+\]
+
+where \(R_{\text{true}}\) is the rate among true matches,
+\(R_{\text{false}}\) is the rate among false matches, and \(f_r\) is the
+false-match rate. Rearranging gives
+
+\[
+R_{\text{true}} = \frac{R' - R_{\text{false}} f_r}{1 - f_r}.
+\]
+
+Because these quantities are not observed in the full linked sample,
+`linkinfer` estimates a correction in a validation subsample. In this
+vignette, `middle_initial_match` plays that role. Since middle initial was
+not used in matching, agreement in middle initial provides information about
+whether a link is likely to be true.
+
+Within the validation subsample, the adjustment factor is defined as
+
+\[
+\widehat{\mathrm{AF}} = \frac{\hat{R}_{\text{true}}}{\hat{R}},
+\]
+
+where \(\hat{R}_{\text{true}}\) is the estimate based on the
+higher-confidence links and \(\hat{R}\) is the estimate based on all
+validation links. The corrected full-sample estimate is then
+
+\[
+\hat{R}_{\text{adj}} = \hat{R}_{\text{full}} \times \widehat{\mathrm{AF}}.
+\]
+
+This method keeps the full linked sample for estimation while using the
+validation subset to calibrate the likely bias from false matches. Its key
+assumption is that the proportional bias observed in the validation subsample
+is informative about the proportional bias in the full linked sample.
+
+The function `adjust_estimate()` implements the adjustment-factor correction
+for both descriptive outcomes and model-based estimates. By default,
+model-based adjustments use ordinary least squares via `lm()`, but users may
+supply any fitting function that accepts a `formula`, a `data` frame, and a
+`weights` argument, such as `glm()`, `coxph()`, or `lmer()`. This is done
+through the `model_fit` argument, together with a custom
+`extract_estimate` function that returns the scalar quantity of interest from
+the fitted model.
+
+### Descriptive adjustment
+
+We first illustrate the adjustment for a descriptive outcome. In this example,
+the outcome is `race_diff`, and the function uses the validation variable
+`middle_initial_match` to estimate an adjustment factor and apply it to the
+weighted full-sample estimate.
 
 ```{r adjust-race-diff}
 adjust_res <- adjust_estimate(
@@ -188,6 +244,12 @@ adjust_res
 ```
 
 ### Regression‑based adjustment (OLS coefficient for Black vs White)
+
+We next illustrate the same logic for a regression coefficient. Here the
+quantity of interest is the coefficient on race_fBlack from an OLS
+regression of age_at_death on race. The adjustment factor is estimated from
+the validation subsample and then applied to the corresponding coefficient in
+the full linked sample.
 
 ```{r adjust-regression, warning=FALSE, message=FALSE}
 # Create a factor for race with White as reference
